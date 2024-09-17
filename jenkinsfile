@@ -39,3 +39,90 @@ node {
  archiveArtifacts artifacts: '$WORKSPACE/$BUILD_NUMBER/JMeter.jtl, $WORKSPACE/$BUILD_NUMBER/HtmlReport/index.html'
  }
 }
+pipeline {
+
+ agent { label 'perf-testing-node'}
+
+ environment {
+
+ galloper = "http://<carrier IP or dns name>"
+
+        token = "<token_from_carrier_secrets>"
+
+ project_id = "<carrier_project_name>"
+
+ test_id = "<carrier_test_plan_id>"
+
+ rabbit_queue = "<name_of_queue_under_that_interceptor_was_launched>"
+
+ }
+
+ 
+
+ stage('Performance') {
+
+ steps {
+
+ sh "whoami"
+
+ sh "mkdir $WORKSPACE/$BUILD_NUMBER"
+
+ script {
+
+ def client_users_new = client_users.toInteger() / 2
+
+ def coach_users_new = coach_users.toInteger() / 2
+
+ def dockerParamsString = "--entrypoint=''"
+
+ def params = [
+
+ "-t",
+
+ "-v $WORKSPACE/$BUILD_NUMBER:/tmp/reports",
+
+ "-e project_id=$project_id",
+
+ "-e galloper_url=$galloper",
+
+ "-e token=$token"
+
+ ]
+
+ for (param in params) {
+
+ dockerParamsString += " ${param}"
+
+ }
+
+    docker.image("getcarrier/control_tower:2.5").inside(dockerParamsString){
+
+          echo "Starting job"
+
+          sh """run --test_id=$test_id -e '{"cmd": "-JCSV_PREFIX=1 -JCLIENT_VUSERS=$client_users_new -JCOACH_VUSERS=$coach_users_new -JCLIENT_RAMP_UP=$client_ramp_up -JCOACH_RAMP_UP=$coach_ramp_up -JCOACH_DURATION=$coach_duration -JCLIENT_DURATION=$client_duration -Jtest.type=$test_type"}' --channel $rabbit_queue -q 1 -p /tmp/reports"""
+
+          }
+
+ }
+
+ sh "sleep 180"
+
+ }
+
+ post {
+
+ always {
+
+ sh "mv /tmp/reports/* $WORKSPACE/$BUILD_NUMBER/"
+
+ archiveArtifacts artifacts: '$WORKSPACE/$BUILD_NUMBER/JMeter.jtl, $WORKSPACE/$BUILD_NUMBER/HtmlReport/index.html'
+
+      }
+
+     }
+
+    }
+
+   }
+
+  }
